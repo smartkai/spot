@@ -1,0 +1,186 @@
+{
+  "nbformat": 4,
+  "nbformat_minor": 0,
+  "metadata": {
+    "colab": {
+      "provenance": [],
+      "include_colab_link": true
+    },
+    "kernelspec": {
+      "name": "python3",
+      "display_name": "Python 3"
+    },
+    "language_info": {
+      "name": "python"
+    }
+  },
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "view-in-github",
+        "colab_type": "text"
+      },
+      "source": [
+        "<a href=\"https://colab.research.google.com/github/smartkai/spot/blob/main/%5B3%EC%A3%BC%EC%B0%A8%5D%20%EA%B5%AD%ED%86%A0%EA%B5%90%ED%86%B5%EB%B6%80_%EC%8B%A4%EA%B1%B0%EB%9E%98%EA%B0%80_%EC%98%A4%ED%94%88API_%EB%8D%B0%EC%9D%B4%ED%84%B0_%EC%A0%84%EC%B2%98%EB%A6%AC\" target=\"_parent\"><img src=\"https://colab.research.google.com/assets/colab-badge.svg\" alt=\"Open In Colab\"/></a>"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "# Lab 국토교통부 실거래가 오픈API - 데이터 수집 실습\n",
+        "\n",
+        "\n",
+        "**2017-2023 [FinanceData.KR]()**"
+      ],
+      "metadata": {
+        "id": "omh7wilpcYD1"
+      }
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "## 국토교통부 아파트매매 실거래자료\n",
+        "https://www.data.go.kr/data/15058747/openapi.do\n",
+        "\n",
+        "\n"
+      ],
+      "metadata": {
+        "id": "px85KywzEvDx"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "!pip install xmltodict"
+      ],
+      "metadata": {
+        "id": "SwXYdBgVDOPS"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "## 법정동 코드 가져오기"
+      ],
+      "metadata": {
+        "id": "ZU_5zkjyrogJ"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "import pandas as pd\n",
+        "\n",
+        "df_code = pd.read_csv('https://goo.gl/tM6r3v', sep='\\t', dtype=str)\n",
+        "df_code = df_code[df_code['폐지여부'] == '존재']\n",
+        "df_code = df_code[['법정동코드', '법정동명']]\n",
+        "df_code"
+      ],
+      "metadata": {
+        "id": "BFsgkwJhB_Ln"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "## 국토교통부_실거래가 함수\n",
+        "구 단위로, 원하는 기간(월단위) 동안의 데이터를 가져오는 함수"
+      ],
+      "metadata": {
+        "id": "rqJ9pbxxW8Io"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "import requests\n",
+        "from bs4 import BeautifulSoup\n",
+        "import xmltodict\n",
+        "import pandas as pd\n",
+        "\n",
+        "service_key = 'tQnga9J6YeQIaF5gV/UlUcHVWWW0Pz/BdejPnYjImpIGwF+KDkhZAlX5M4ObtVWcJ3Hrhoxov5CVHf02SkTOcA=='\n",
+        "\n",
+        "def 국토교통부_실거래가(lawd_code, start, end):\n",
+        "    lawd_code = lawd_code[:5] if len(lawd_code) == 10 else lawd_code\n",
+        "\n",
+        "    dfs = []\n",
+        "    for date in pd.date_range(start, end, freq='MS'):\n",
+        "        params ={\n",
+        "            'serviceKey' : service_key,  # API키\n",
+        "            'LAWD_CD' : lawd_code,   # 지역 코드 법정동코드 10자리 중 앞 5자리\n",
+        "            'DEAL_YMD' : date.strftime('%Y%m'),   # 계약년월(YYYYMM 6자리)\n",
+        "        }\n",
+        "        url = 'http://openapi.molit.go.kr:8081/OpenAPI_ToolInstallPackage/service/rest/RTMSOBJSvc/getRTMSDataSvcAptTrade'\n",
+        "        r = requests.get(url, params=params)\n",
+        "        dict_data = xmltodict.parse(r.text) #xml to json\n",
+        "        if dict_data['response']['body']['totalCount'] == '0':\n",
+        "            continue\n",
+        "        month_data = pd.DataFrame(dict_data['response']['body']['items']['item'])\n",
+        "        dfs.append(month_data)\n",
+        "\n",
+        "    df = pd.concat(dfs)\n",
+        "    df['거래금액'] = df['거래금액'].str.replace(',', '').astype(int)\n",
+        "    df['거래일'] = pd.to_datetime(df['년'] + df['월'].str.zfill(2) + df['일'].str.zfill(2))\n",
+        "    df['전용면적'] = df['전용면적'].astype(float)\n",
+        "    return df"
+      ],
+      "metadata": {
+        "id": "Fyk-w-URbFiL"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "서울특별시_강남구 = 국토교통부_실거래가('1168000000', '2021-01-01', '2021-12-01')\n",
+        "서울특별시_강남구"
+      ],
+      "metadata": {
+        "id": "mVRGs3QXvkCY"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "서울특별시_종로구 = 국토교통부_실거래가('1111000000', '2021-01-01', '2021-12-01')\n",
+        "서울특별시_종로구"
+      ],
+      "metadata": {
+        "id": "9hFFbFgYsK8w"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# 엑셀 파일로 저장하기\n",
+        "\n",
+        "서울특별시_강남구.to_excel('2021_서울특별시_강남구.xlsx', index=False)\n",
+        "서울특별시_종로구.to_excel('2021_서울특별시_종로구.xlsx', index=False)"
+      ],
+      "metadata": {
+        "id": "KfFn7c5DsK4N"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "**2017-2023 FinanceData.KR]()**"
+      ],
+      "metadata": {
+        "id": "wPUmB5y-UjCK"
+      }
+    }
+  ]
+}
